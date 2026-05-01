@@ -1,736 +1,701 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Play, 
-  Pause, 
-  SkipForward, 
-  Square, 
-  Clock, 
-  Settings, 
-  RotateCcw, 
-  Info,
-  CheckCircle2,
-  Timer,
-  Zap,
-  BrainCircuit,
-  Lightbulb,
-  Sparkles,
-  Zap as ZapIcon, 
-  Eye,
-  Heart,
-  Crown,
-  MapPin,
-  Quote,
-  AlertTriangle,
-  Loader2,
-  Wand2
-} from 'lucide-react';
-
-// --- КОНФИГУРАЦИЯ API ---
-const apiKey = ""; // API ключ предоставляется средой выполнения
-
-const callGemini = async (prompt) => {
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      }
-    );
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    return null;
-  }
-};
-
-// --- КОНФИГУРАЦИЯ И ДАННЫЕ ---
-
-// 1. КАТЕГОРИИ (Добавлена AI категория)
-const CATEGORIES = {
-  ALL: { id: 'all', label: 'Все категории' },
-  AI_CUSTOM: { id: 'ai_custom', label: '✨ Своя тема (AI)', isAi: true },
-  OBJECTS: { id: 'objects', label: 'Предметы и быт' },
-  FOOD: { id: 'food', label: 'Еда и напитки' },
-  NATURE: { id: 'nature', label: 'Природа и погода' },
-  PLACES: { id: 'places', label: 'Город и места' },
-  PEOPLE: { id: 'people', label: 'Люди и роли' },
-  EMOTIONS: { id: 'emotions', label: 'Эмоции и состояния' },
-  ABSTRACT: { id: 'abstract', label: 'Абстрактное' },
-  ACTIONS: { id: 'actions', label: 'Действия и процессы' },
-  COMMUNICATION: { id: 'communication', label: 'Коммуникация' },
-  TECH: { id: 'tech', label: 'Технологии' },
-};
-
-// 2. РЕЖИМЫ ИГРЫ
-const GAME_MODES = [
-  { 
-    id: 'classic', 
-    label: 'Классика', 
-    icon: BrainCircuit, 
-    desc: 'Любые ассоциации. Просто и свободно.',
-    isPro: false 
-  },
-  { 
-    id: 'speed', 
-    label: 'На скорость', 
-    icon: ZapIcon, 
-    desc: 'Без остановок! Пауза > 1 сек — жми дальше.',
-    isPro: false 
-  },
-  { 
-    id: 'close', 
-    label: 'Близко', 
-    icon: Lightbulb, 
-    desc: 'Только очевидные и прямые ассоциации.',
-    isPro: false 
-  },
-  { 
-    id: 'far', 
-    label: 'Далеко', 
-    icon: Sparkles, 
-    desc: 'Ищи неожиданные, дальние связи.',
-    isPro: true 
-  },
-  { 
-    id: 'sensory', 
-    label: 'Сенсорика', 
-    icon: Eye, 
-    desc: 'Вид, фактура, температура, звук, запах, вкус.',
-    isPro: true 
-  },
-  { 
-    id: 'emotion', 
-    label: 'Эмоция', 
-    icon: Heart, 
-    desc: 'Какое настроение рождает это слово?',
-    isPro: true 
-  },
-  { 
-    id: 'status', 
-    label: 'Статус', 
-    icon: Crown, 
-    desc: 'Дорого/дёшево, элитно/массово, стиль.',
-    isPro: true 
-  },
-  { 
-    id: 'situation', 
-    label: 'Ситуация', 
-    icon: MapPin, 
-    desc: 'Сцена: где, с кем и что происходит.',
-    isPro: true 
-  },
-  { 
-    id: 'metaphor', 
-    label: 'Метафора', 
-    icon: Quote, 
-    desc: 'Формат "Это как..."',
-    isPro: true 
-  },
-  { 
-    id: 'no_banal', 
-    label: 'Без банальностей', 
-    icon: AlertTriangle, 
-    desc: 'Избегай слов "хорошо", "плохо", "обычно".',
-    isPro: true 
-  },
-];
-
-const DURATION_PRESETS = [60, 180, 300, 600, 900];
-const INTERVAL_PRESETS = [3, 5, 7, 10, 15];
-
-// 3. НОВЫЙ СЛОВАРЬ (240+ слов)
-const createWords = (list, category) => list.split(', ').map(text => ({ text, category }));
-
-const WORD_DB = [
-  ...createWords("Стул, Стол, Диван, Кровать, Шкаф, Полка, Ключ, Замок, Дверь, Окно, Лампа, Свеча, Зеркало, Часы, Календарь, Телефон, Наушники, Компьютер, Клавиатура, Мышь, Зарядка, Рюкзак, Сумка, Кошелёк, Зонт, Бутылка, Кружка, Тарелка, Ложка, Нож, Вилка, Книга, Тетрадь, Ручка, Наклейка, Плед, Подушка, Мыло, Полотенце, Очки", 'objects'),
-  ...createWords("Хлеб, Масло, Сыр, Йогурт, Яйцо, Паста, Рис, Суп, Салат, Пицца, Шоколад, Печенье, Мёд, Яблоко, Банан, Апельсин, Лимон, Клубника, Орехи, Чай, Кофе, Какао, Вода, Сок", 'food'),
-  ...createWords("Солнце, Дождь, Снег, Ветер, Гроза, Туман, Радуга, Море, Река, Озеро, Гора, Лес, Поле, Песок, Камень, Лист, Цветок, Дерево, Огонь, Лёд, Волна, Облако, Звезда, Луна", 'nature'),
-  ...createWords("Дом, Квартира, Подъезд, Лифт, Двор, Улица, Площадь, Парк, Кафе, Ресторан, Магазин, Рынок, Офис, Переговорка, Коворкинг, Школа, Университет, Театр, Кино, Музей, Стадион, Библиотека, Больница, Аптека, Метро, Вокзал", 'places'),
-  ...createWords("Друг, Подруга, Партнёр, Родитель, Ребёнок, Учитель, Тренер, Ведущий, Зритель, Клиент, Менеджер, Директор, Предприниматель, Команда, Коллега, Новичок, Эксперт, Психолог, Врач, Актёр, Музыкант, Художник, Программист, Дизайнер, Блогер, Сосед", 'people'),
-  ...createWords("Радость, Спокойствие, Тревога, Страх, Злость, Грусть, Стыд, Вина, Удивление, Восторг, Усталость, Вдохновение, Скука, Интерес, Любовь, Нежность, Раздражение, Уверенность, Сомнение, Ревность, Смелость, Смущение, Облегчение, Одиночество", 'emotions'),
-  ...createWords("Свобода, Время, Смысл, Выбор, Риск, Ответственность, Доверие, Контроль, Порядок, Хаос, Правило, Игра, Творчество, Красота, Гармония, Сила, Энергия, Внимание, Привычка, Цель, Результат, Ошибка, Успех, Провал", 'abstract'),
-  ...createWords("Слушать, Говорить, Спорить, Договариваться, Просить, Отказывать, Объяснять, Убеждать, Продавать, Учиться, Тренироваться, Планировать, Делегировать, Начинать, Завершать, Ждать, Спешить, Выбирать, Рисковать, Праздновать, Путешествовать, Импровизировать, Создавать, Исправлять, Отпускать, Фокусироваться, Отдыхать, Работать", 'actions'),
-  ...createWords("Выступление, Презентация, Камера, Микрофон, Сцена, Пауза, Тишина, Вопрос, Ответ, Шутка, История, Аргумент, Голос, Взгляд, Жест, Харизма", 'communication'),
-  ...createWords("Интернет, Приложение, Чат, Уведомление, Подписка, Алгоритм, Данные, Пароль, Сеть, Батарея, Обновление, Ошибка (баг), Видеозвонок, Ссылка, Профиль, Лента", 'tech')
-];
-
-// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-
-const formatTime = (seconds) => {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-};
-
-const getRandomWord = (category, history, customWords = []) => {
-  let pool = WORD_DB;
-  
-  // Если выбрана AI категория, используем сгенерированный пул
-  if (category === CATEGORIES.AI_CUSTOM.id) {
-    pool = customWords;
-  } else if (category !== CATEGORIES.ALL.id) {
-    pool = WORD_DB.filter(w => w.category === category);
-  }
-  
-  if (!pool || pool.length === 0) return "Нет слов";
-
-  const available = pool.filter(w => !history.includes(w.text));
-  
-  if (available.length === 0) {
-    const fallback = pool[Math.floor(Math.random() * pool.length)];
-    return fallback ? fallback.text : "Слова закончились";
-  }
-
-  const randomIndex = Math.floor(Math.random() * available.length);
-  return available[randomIndex].text;
-};
-
-// --- КОМПОНЕНТЫ ---
-
-export default function App() {
-  const [screen, setScreen] = useState('SETTINGS'); 
-
-  // Настройки
-  const [totalDuration, setTotalDuration] = useState(180);
-  const [wordInterval, setWordInterval] = useState(7);
-  const [category, setCategory] = useState(CATEGORIES.ALL.id);
-  const [modeId, setModeId] = useState('classic');
-
-  // AI State
-  const [customTopic, setCustomTopic] = useState('');
-  const [customWords, setCustomWords] = useState([]);
-  const [isGeneratingWords, setIsGeneratingWords] = useState(false);
-  const [aiHint, setAiHint] = useState(null);
-  const [isGeneratingHint, setIsGeneratingHint] = useState(false);
-
-  // Состояние игры
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [roundTimeLeft, setRoundTimeLeft] = useState(0);
-  const [wordTimeLeft, setWordTimeLeft] = useState(0);
-  const [currentWord, setCurrentWord] = useState('');
-  const [wordsHistory, setWordsHistory] = useState([]);
-  const [wordsCount, setWordsCount] = useState(0);
-
-  const tickRate = 100;
-  const timerRef = useRef(null);
-
-  const activeMode = GAME_MODES.find(m => m.id === modeId) || GAME_MODES[0];
-
-  // --- ЛОГИКА ---
-
-  const generateCustomWords = async () => {
-    if (!customTopic.trim()) {
-      alert("Пожалуйста, введите тему!");
-      return null;
-    }
-    
-    setIsGeneratingWords(true);
-    const prompt = `Создай список из 40 существительных на русском языке, тесно связанных с темой "${customTopic}". Слова должны быть разнообразными и интересными для игры в ассоциации. Верни ТОЛЬКО слова, разделенные запятыми. Без нумерации, без вступлений.`;
-    
-    const result = await callGemini(prompt);
-    setIsGeneratingWords(false);
-    
-    if (result) {
-      const words = result.split(',').map(s => ({ text: s.trim(), category: 'ai_custom' })).filter(w => w.text.length > 1);
-      if (words.length < 5) {
-        alert("Не удалось сгенерировать достаточно слов. Попробуйте другую тему.");
-        return null;
-      }
-      setCustomWords(words);
-      return words;
-    } else {
-      alert("Ошибка AI. Проверьте соединение.");
-      return null;
-    }
-  };
-
-  const startGame = async () => {
-    let currentPool = [];
-
-    // AI Generation Check
-    if (category === CATEGORIES.AI_CUSTOM.id) {
-      const generated = await generateCustomWords();
-      if (!generated) return; // Stop if failed
-      currentPool = generated;
-    }
-
-    setRoundTimeLeft(totalDuration);
-    setWordTimeLeft(wordInterval);
-    setWordsHistory([]);
-    setWordsCount(0);
-    setAiHint(null);
-    
-    // Pass custom pool if needed
-    const firstWord = getRandomWord(category, [], category === CATEGORIES.AI_CUSTOM.id ? currentPool : []);
-    setCurrentWord(firstWord);
-    setWordsHistory([firstWord]);
-    
-    setIsPlaying(true);
-    setScreen('GAME');
-  };
-
-  const nextWord = () => {
-    const newWord = getRandomWord(category, wordsHistory, customWords);
-    setCurrentWord(newWord);
-    setWordsHistory(prev => [...prev, newWord]);
-    setWordsCount(prev => prev + 1);
-    setWordTimeLeft(wordInterval);
-    setAiHint(null); // Reset hint
-  };
-
-  const stopGame = () => {
-    setIsPlaying(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    setScreen('RESULTS');
-  };
-
-  const getHint = async () => {
-    if (isGeneratingHint || aiHint) return;
-    setIsGeneratingHint(true);
-    const prompt = `Придумай 3 короткие, яркие и неочевидные ассоциации к слову "${currentWord}" на русском языке. Верни только эти 3 слова/фразы через запятую.`;
-    const result = await callGemini(prompt);
-    setIsGeneratingHint(false);
-    if (result) {
-      setAiHint(result);
-    }
-  };
-
-  useEffect(() => {
-    if (screen === 'GAME' && isPlaying) {
-      timerRef.current = setInterval(() => {
-        setRoundTimeLeft(prev => {
-          if (prev <= 0) {
-            stopGame();
-            return 0;
-          }
-          return prev - (tickRate / 1000);
-        });
-
-        setWordTimeLeft(prev => {
-          if (prev <= 0) {
-            nextWord();
-            return wordInterval;
-          }
-          return prev - (tickRate / 1000);
-        });
-
-      }, tickRate);
-    } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [screen, isPlaying, wordInterval, category, wordsHistory, customWords]);
-
-
-  // --- ЭКРАНЫ ---
-
-  const ScreenSettings = () => (
-    <div className="flex flex-col h-full max-w-md mx-auto p-4 animate-fade-in bg-gray-50">
-      <div className="text-center mb-6 mt-4">
-        <h1 className="text-3xl font-bold text-indigo-600 mb-1 flex items-center justify-center gap-2">
-           Ассоциации <Sparkles className="w-5 h-5 text-amber-500" />
-        </h1>
-        <p className="text-sm text-gray-500">Настройки раунда</p>
-      </div>
-
-      <div className="flex-1 space-y-6 overflow-y-auto pb-4 pr-1 scrollbar-hide">
-        
-        {/* Категории (Обновленные) */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-          <label className="block text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-            <Settings className="w-4 h-4 text-indigo-500" /> Словарь
-          </label>
-          <div className="flex flex-col gap-1.5">
-            {Object.values(CATEGORIES).map(cat => (
-              <div key={cat.id}>
-                <button
-                  onClick={() => setCategory(cat.id)}
-                  className={`w-full text-left px-3 py-3 rounded-lg border transition-all flex items-center justify-between text-sm ${
-                    category === cat.id 
-                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700 font-medium' 
-                    : 'border-transparent hover:bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    {cat.isAi && <Sparkles className="w-4 h-4 text-amber-500" />}
-                    {cat.label}
-                  </span>
-                  {category === cat.id && <CheckCircle2 className="w-4 h-4 text-indigo-600" />}
-                </button>
-                
-                {/* AI Input Field */}
-                {cat.isAi && category === cat.id && (
-                  <div className="mt-2 pl-2 pr-2 pb-2 animate-fade-in">
-                    <input 
-                      type="text" 
-                      value={customTopic}
-                      onChange={(e) => setCustomTopic(e.target.value)}
-                      placeholder="Введите тему (напр. Звездные войны)"
-                      className="w-full p-3 border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1 ml-1">
-                      Gemini сгенерирует уникальные слова по этой теме
-                    </p>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Выбор Режима */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-          <label className="block text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-            <BrainCircuit className="w-4 h-4 text-indigo-500" /> Режим игры
-          </label>
-          <div className="grid grid-cols-1 gap-2">
-            {GAME_MODES.map(mode => {
-              const Icon = mode.icon;
-              const isSelected = modeId === mode.id;
-              return (
-                <button
-                  key={mode.id}
-                  onClick={() => setModeId(mode.id)}
-                  className={`relative p-3 rounded-xl text-left border-2 transition-all flex items-start gap-3 ${
-                    isSelected 
-                    ? 'border-indigo-600 bg-indigo-50' 
-                    : 'border-transparent bg-gray-50 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className={`p-2 rounded-lg ${isSelected ? 'bg-indigo-200 text-indigo-700' : 'bg-gray-200 text-gray-500'}`}>
-                    <Icon size={20} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                       <span className={`font-bold text-sm ${isSelected ? 'text-indigo-900' : 'text-gray-700'}`}>
-                         {mode.label}
-                       </span>
-                       {mode.isPro && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">PRO</span>}
-                    </div>
-                    <p className="text-xs text-gray-500 leading-tight mt-1">{mode.desc}</p>
-                  </div>
-                  {isSelected && <CheckCircle2 className="absolute top-3 right-3 w-5 h-5 text-indigo-600" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Время и интервал (Collapsible or smaller) */}
-        <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-              <label className="block text-xs font-bold text-gray-500 mb-2">Время раунда</label>
-              <select 
-                value={totalDuration} 
-                onChange={(e) => setTotalDuration(Number(e.target.value))}
-                className="w-full p-2 bg-gray-100 rounded-lg text-sm font-bold"
-              >
-                {DURATION_PRESETS.map(t => <option key={t} value={t}>{t >= 60 ? `${t/60} мин` : `${t} с`}</option>)}
-              </select>
-            </div>
-            <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-              <label className="block text-xs font-bold text-gray-500 mb-2">Смена слова</label>
-               <select 
-                value={wordInterval} 
-                onChange={(e) => setWordInterval(Number(e.target.value))}
-                className="w-full p-2 bg-gray-100 rounded-lg text-sm font-bold"
-              >
-                {INTERVAL_PRESETS.map(t => <option key={t} value={t}>{t} сек</option>)}
-              </select>
-            </div>
-        </div>
-      </div>
-
-      <button
-        onClick={startGame}
-        disabled={isGeneratingWords}
-        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-wait active:bg-indigo-800 text-white font-bold py-3.5 rounded-xl shadow-lg transition-colors text-lg mt-4 flex items-center justify-center gap-2"
-      >
-        {isGeneratingWords ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" /> Генерируем...
-          </>
-        ) : (
-          "Начать игру"
-        )}
-      </button>
-      
-       <button
-        onClick={() => setScreen('RULES')}
-        className="w-full text-gray-500 font-medium py-2 text-sm mt-1"
-      >
-        Как играть?
-      </button>
-    </div>
-  );
-
-  const ScreenRules = () => (
-    <div className="flex flex-col h-full max-w-md mx-auto p-4 animate-fade-in bg-white">
-      <div className="text-center mb-4 mt-2">
-        <h2 className="text-2xl font-bold text-gray-800">Инструкция</h2>
-      </div>
-
-      <div className="flex-1 overflow-y-auto space-y-4 pb-4 text-gray-700">
-        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
-          <div className="flex items-center gap-2 mb-2">
-            <activeMode.icon className="w-5 h-5 text-indigo-600" />
-            <h3 className="font-bold text-indigo-800">Выбран режим: {activeMode.label}</h3>
-          </div>
-          <p className="text-sm font-medium leading-relaxed">
-            {activeMode.desc}
-          </p>
-        </div>
-
-        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-          <h3 className="font-bold text-gray-800 mb-2">Общие правила</h3>
-          <ul className="list-disc pl-5 space-y-2 text-sm">
-            <li>Говори <b>вслух</b> и быстро.</li>
-            <li>Не оценивай свои ответы.</li>
-            <li>Если "завис" — используй подсказку AI (кнопка 💡) или пропусти слово.</li>
-          </ul>
-        </div>
-      </div>
-
-      <div className="flex gap-3 mt-4">
-        <button
-          onClick={() => setScreen('SETTINGS')}
-          className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3.5 rounded-xl transition-colors"
-        >
-          Назад
-        </button>
-      </div>
-    </div>
-  );
-
-  const ScreenGame = () => {
-    const progress = (wordTimeLeft / wordInterval) * 100;
-    const isUrgent = wordTimeLeft < 3; 
-    const ModeIcon = activeMode.icon;
-    const isSpeedMode = modeId === 'speed';
-
-    return (
-      <div className="flex flex-col h-full max-w-md mx-auto bg-gray-50">
-        {/* Top Bar */}
-        <div className="flex justify-between items-center p-4">
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
-            <Clock className="w-4 h-4 text-gray-400" />
-            <span className="font-mono font-bold text-gray-700 text-lg">
-              {formatTime(Math.ceil(roundTimeLeft))}
-            </span>
-          </div>
-          <button 
-            onClick={stopGame}
-            className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-full transition-colors"
-          >
-            <Square className="w-5 h-5 fill-current" />
-          </button>
-        </div>
-
-        {/* Main Game Area */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
-          
-          {/* Background Ring */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03]">
-            <div className="w-72 h-72 rounded-full border-[16px] border-indigo-900"></div>
-          </div>
-
-          <div className="text-center z-10 w-full flex flex-col items-center">
-            
-            {/* Mode Badge */}
-            <div className="mb-6 animate-fade-in bg-indigo-100 text-indigo-800 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-              <ModeIcon size={16} />
-              <span className="text-xs font-bold uppercase tracking-wide">{activeMode.label}</span>
-            </div>
-            
-            {/* Instruction Tip */}
-            <p className="text-gray-400 text-xs mb-4 max-w-[200px] leading-tight">
-               {activeMode.desc}
-            </p>
-
-            <div className="mb-8 animate-scale-in min-h-[80px] flex items-center justify-center w-full">
-              <h1 className="text-4xl md:text-5xl font-black text-gray-900 break-words leading-tight text-center">
-                {currentWord}
-              </h1>
-            </div>
-
-            {/* AI Hint Display */}
-            {aiHint && (
-               <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-sm animate-fade-in max-w-xs shadow-sm">
-                  <div className="flex items-center gap-1 mb-1 text-xs font-bold text-amber-600 uppercase">
-                    <Sparkles size={12}/> Подсказка Gemini
-                  </div>
-                  {aiHint}
-               </div>
-            )}
-
-            {/* Word Timer */}
-            <div className="flex flex-col items-center justify-center mt-2">
-               <div className="relative w-24 h-24 flex items-center justify-center">
-                 <svg className="w-full h-full transform -rotate-90">
-                   <circle
-                     cx="48" cy="48" r="40"
-                     className="stroke-gray-200"
-                     strokeWidth="6" fill="transparent"
-                   />
-                   <circle
-                     cx="48" cy="48" r="40"
-                     className={`transition-all duration-100 ease-linear ${isUrgent ? 'stroke-red-500' : 'stroke-indigo-500'}`}
-                     strokeWidth="6" fill="transparent"
-                     strokeDasharray={251.2}
-                     strokeDashoffset={251.2 - (251.2 * progress) / 100}
-                     strokeLinecap="round"
-                   />
-                 </svg>
-                 <span className={`absolute text-2xl font-bold font-mono ${isUrgent ? 'text-red-600' : 'text-indigo-600'}`}>
-                   {Math.ceil(wordTimeLeft)}
-                 </span>
-               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="bg-white p-4 border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] relative z-20">
-          {/* Top Control Row: Hint & Pause */}
-          <div className="flex justify-between items-center mb-3 max-w-sm mx-auto">
-             <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="p-3 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition-colors"
-            >
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-            </button>
-
-            {/* AI Hint Button */}
-             <button
-              onClick={getHint}
-              disabled={!isPlaying || isGeneratingHint || aiHint}
-              className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
-                aiHint 
-                ? 'bg-gray-100 text-gray-400 cursor-default' 
-                : 'bg-amber-100 text-amber-700 hover:bg-amber-200 shadow-sm'
-              }`}
-            >
-              {isGeneratingHint ? <Loader2 className="w-4 h-4 animate-spin"/> : <Lightbulb className="w-4 h-4 fill-current"/>}
-              {isGeneratingHint ? "Думаю..." : "Идея"}
-            </button>
-          </div>
-
-          {/* Main Action: Next Word */}
-          <div className="max-w-sm mx-auto">
-            <button
-              onClick={nextWord}
-              disabled={!isPlaying}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-bold text-xl shadow-md transition-all active:scale-95"
-            >
-              Дальше <SkipForward className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-        
-        {/* Pause Overlay */}
-        {!isPlaying && (
-          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
-            <div className="text-center p-8 bg-white shadow-2xl rounded-3xl border border-gray-100 max-w-xs mx-4 animate-fade-in">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Пауза</h2>
-              <button 
-                onClick={() => setIsPlaying(true)}
-                className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-indigo-700 transition-transform active:scale-95"
-              >
-                Продолжить
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const ScreenResults = () => {
-    const timeSpent = totalDuration - Math.max(0, roundTimeLeft);
-    
-    return (
-      <div className="flex flex-col h-full max-w-md mx-auto p-4 animate-fade-in justify-center bg-gray-50">
-        <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-          <div className="bg-indigo-600 p-8 text-center text-white relative overflow-hidden">
-            <h1 className="text-3xl font-bold mb-2 relative z-10">Раунд завершён</h1>
-            <p className="opacity-90 relative z-10 text-indigo-100">Отличная ментальная разминка!</p>
-          </div>
-          
-          <div className="p-6 space-y-5">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-50 p-4 rounded-2xl text-center">
-                 <span className="block text-gray-400 text-xs uppercase font-bold tracking-wider mb-1">Слов</span>
-                 <span className="block text-3xl font-black text-gray-800">{wordsCount + 1}</span>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-2xl text-center">
-                 <span className="block text-gray-400 text-xs uppercase font-bold tracking-wider mb-1">Время</span>
-                 <span className="block text-3xl font-black text-gray-800">{formatTime(Math.ceil(timeSpent))}</span>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <div className="flex justify-between items-center text-sm border-b border-gray-100 pb-2">
-                <span className="text-gray-500">Режим</span>
-                <span className="font-bold text-gray-800 flex items-center gap-1">
-                  <activeMode.icon size={14} className="text-indigo-500"/> {activeMode.label}
-                </span>
-              </div>
-               <div className="flex justify-between items-center text-sm pb-1">
-                 <span className="text-gray-500">Категория</span>
-                 <span className="font-bold text-gray-800 truncate max-w-[150px]">
-                   {Object.values(CATEGORIES).find(c => c.id === category)?.label}
-                   {category === 'ai_custom' && customTopic && ` (${customTopic})`}
-                 </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6 bg-gray-50 space-y-3">
-            <button
-              onClick={startGame}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow transition-all active:scale-95"
-            >
-              <RotateCcw className="w-5 h-5" /> Повторить раунд
-            </button>
-            
-            <button
-              onClick={() => setScreen('SETTINGS')}
-              className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl transition-colors"
-            >
-              <Settings className="w-5 h-5" /> Изменить настройки
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="h-screen w-full bg-gray-100 font-sans text-gray-900 overflow-hidden selection:bg-indigo-100">
-      {screen === 'SETTINGS' && <ScreenSettings />}
-      {screen === 'RULES' && <ScreenRules />}
-      {screen === 'GAME' && <ScreenGame />}
-      {screen === 'RESULTS' && <ScreenResults />}
-      
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes scaleIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-        .animate-scale-in { animation: scaleIn 0.3s ease-out forwards; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
-    </div>
-  );
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Монологи</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --p:#7F77DD;--pd:#3C3489;--pm:#EEEDFE;--pb:#d0c8f8;--pmut:#AFA9EC;
+  --bg:#f0eeff;--white:#fff;--red:#E24B4A;
 }
+body{font-family:'Montserrat',sans-serif;background:var(--bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 18px 56px;color:var(--pd);}
+.screen{display:none;width:100%;max-width:360px;flex-direction:column;gap:20px;}
+.screen.active{display:flex;}
+
+.sound-toggle{position:fixed;top:16px;right:16px;z-index:50;width:36px;height:36px;border-radius:50%;border:.5px solid var(--pb);background:var(--pm);color:var(--pd);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.sound-toggle:active{background:var(--p);color:#fff;}
+
+.back-btn{display:flex;align-items:center;gap:6px;background:none;border:none;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:600;color:var(--pmut);cursor:pointer;letter-spacing:.5px;padding:0;}
+.back-btn:active{opacity:.5;}
+
+/* HOME */
+.home-eyebrow{font-size:10px;font-weight:600;letter-spacing:2.5px;color:var(--pmut);text-transform:uppercase;}
+.home-title{font-size:32px;font-weight:900;color:var(--pd);letter-spacing:1px;line-height:1;margin-top:6px;text-transform:uppercase;}
+.home-sub{font-size:13px;font-weight:300;color:var(--pmut);margin-top:8px;}
+.divider{height:.5px;background:var(--pb);}
+.how-list{display:flex;flex-direction:column;gap:12px;}
+.how-row{display:flex;align-items:flex-start;gap:14px;}
+.how-num{font-size:10px;font-weight:700;color:var(--pmut);min-width:20px;padding-top:2px;letter-spacing:.5px;}
+.how-text{font-size:11px;font-weight:500;color:var(--pd);line-height:1.6;letter-spacing:.3px;}
+.how-text b{font-weight:800;color:var(--pd);}
+.home-btns{display:flex;flex-direction:column;gap:8px;}
+.btn-main{background:var(--p);color:#fff;border:none;border-radius:14px;padding:16px 20px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;width:100%;transition:opacity .1s;text-transform:uppercase;}
+.btn-main:active{opacity:.85;}
+.btn-main .bleft{display:flex;flex-direction:column;align-items:flex-start;gap:3px;}
+.btn-main .bsub{font-size:10px;font-weight:300;opacity:.7;letter-spacing:.3px;text-transform:none;}
+.btn-main .barr{font-size:18px;opacity:.6;}
+.btn-ghost{background:var(--pm);color:var(--pd);border:none;border-radius:14px;padding:15px 20px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;cursor:pointer;width:100%;transition:opacity .1s;text-transform:uppercase;}
+.btn-ghost:active{opacity:.7;}
+.btn-ghost .bleft{display:flex;flex-direction:column;align-items:flex-start;gap:3px;}
+.btn-ghost .bsub{font-size:10px;font-weight:300;color:var(--pmut);letter-spacing:.3px;text-transform:none;}
+.btn-ghost .barr{font-size:16px;color:var(--pmut);}
+
+/* CUSTOM */
+.section-eyebrow{font-size:10px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;margin-bottom:14px;}
+.cat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.cat-btn{padding:12px 8px;border-radius:12px;border:.5px solid var(--pb);background:var(--pm);color:var(--pd);font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center;text-transform:uppercase;letter-spacing:.3px;}
+.cat-btn.selected{background:var(--p);color:#fff;border-color:var(--p);}
+.cat-btn .ce{display:block;font-size:18px;margin-bottom:4px;}
+
+.mode-list{display:flex;flex-direction:column;gap:8px;}
+.mode-btn{padding:14px 16px;border-radius:12px;border:.5px solid var(--pb);background:var(--pm);color:var(--pd);font-family:'Montserrat',sans-serif;cursor:pointer;transition:all .15s;text-align:left;display:flex;align-items:flex-start;gap:12px;}
+.mode-btn.selected{background:var(--p);color:#fff;border-color:var(--p);}
+.mode-btn .me{font-size:18px;flex-shrink:0;margin-top:1px;}
+.mode-btn .mtitle{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;}
+.mode-btn .mdesc{font-size:10px;font-weight:400;opacity:.65;margin-top:3px;line-height:1.4;}
+
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:.5px solid var(--pb);}
+.setting-row:last-child{border-bottom:none;padding-bottom:0;}
+.sname{font-size:11px;font-weight:700;color:var(--pd);text-transform:uppercase;letter-spacing:.8px;}
+.sdesc{font-size:10px;font-weight:400;color:var(--pmut);margin-top:2px;}
+.stepper{display:flex;align-items:center;gap:10px;}
+.step-btn{width:32px;height:32px;border-radius:50%;border:.5px solid var(--pb);background:var(--pm);color:var(--pd);font-size:18px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.step-btn:active{background:var(--p);color:#fff;border-color:var(--p);}
+.step-val{font-size:13px;font-weight:700;color:var(--pd);min-width:44px;text-align:center;}
+
+/* THEORY */
+.theory-title{font-size:28px;font-weight:900;color:var(--pd);letter-spacing:1px;line-height:1.05;text-transform:uppercase;}
+.theory-sub{font-size:13px;font-weight:300;color:var(--pmut);margin-top:6px;}
+.tsec{padding:16px 0;border-bottom:.5px solid var(--pb);}
+.tsec:last-child{border-bottom:none;}
+.tsec-label{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--p);text-transform:uppercase;margin-bottom:8px;}
+.tsec-body{font-size:13px;font-weight:400;color:var(--pd);line-height:1.65;}
+.tsec-body b{font-weight:700;}
+.theory-tip{background:var(--pm);border-left:2px solid var(--p);border-radius:0 10px 10px 0;padding:12px 14px;margin-top:10px;font-size:12px;font-weight:500;color:var(--pd);line-height:1.5;}
+
+/* GAME */
+.game-topbar{display:flex;justify-content:space-between;align-items:center;}
+.game-eyebrow{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;}
+.game-sess{font-size:12px;font-weight:300;color:var(--pmut);}
+.game-sess b{font-weight:700;color:var(--pd);}
+.game-sess.urgent b{color:var(--red);}
+
+.mode-tag{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--p);text-transform:uppercase;text-align:center;}
+
+/* MONOLOGUE CARD */
+.character-card{background:var(--white);border-radius:28px;border:.5px solid var(--pb);padding:32px 24px 28px;text-align:center;}
+.char-eyebrow{font-size:9px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;margin-bottom:10px;}
+.char-name{font-size:40px;font-weight:900;color:var(--pd);letter-spacing:.5px;line-height:1.05;margin-bottom:8px;text-transform:uppercase;word-break:keep-all;}
+.char-prompt{font-size:12px;font-weight:400;color:var(--pmut);line-height:1.5;margin-bottom:24px;}
+
+/* INTERVIEW CARD */
+.interview-card{background:var(--white);border-radius:28px;border:.5px solid var(--pb);padding:24px;}
+.iv-char-row{display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:.5px solid var(--pb);margin-bottom:16px;}
+.iv-avatar{width:48px;height:48px;border-radius:50%;background:var(--pm);border:.5px solid var(--pb);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;}
+.iv-char-info{}
+.iv-char-eyebrow{font-size:9px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;}
+.iv-char-name{font-size:20px;font-weight:900;color:var(--pd);letter-spacing:.3px;text-transform:uppercase;line-height:1.1;margin-top:2px;}
+.iv-question-label{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;margin-bottom:10px;}
+.iv-question{font-size:18px;font-weight:700;color:var(--pd);line-height:1.35;letter-spacing:-.3px;}
+.iv-question-num{font-size:10px;font-weight:500;color:var(--pmut);margin-top:8px;letter-spacing:.5px;}
+
+.next-q-btn{background:var(--p);color:#fff;border:none;border-radius:14px;padding:14px 20px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;width:100%;letter-spacing:.3px;text-transform:uppercase;transition:opacity .1s;}
+.next-q-btn:active{opacity:.85;}
+.next-q-btn:disabled{opacity:.35;cursor:default;}
+
+/* TIMER BIG */
+.timer-section{text-align:center;}
+.timer-big-row{display:flex;align-items:baseline;justify-content:center;gap:8px;margin-bottom:10px;}
+.timer-big{font-size:64px;font-weight:200;color:var(--p);letter-spacing:-3px;line-height:1;}
+.timer-unit{font-size:11px;font-weight:600;letter-spacing:1px;color:var(--pmut);text-transform:uppercase;}
+.timer-bar-bg{height:3px;background:var(--pb);border-radius:3px;overflow:hidden;}
+.timer-bar-fill{height:100%;background:var(--p);border-radius:3px;transition:width 1s linear;}
+
+.ctrl-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.ctrl-btn{padding:12px 6px;background:var(--pm);border:none;border-radius:12px;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;color:var(--pd);letter-spacing:.3px;cursor:pointer;text-align:center;text-transform:uppercase;transition:all .15s;}
+.ctrl-btn:active{opacity:.7;}
+.ctrl-btn.pause-active{background:var(--p);color:#fff;}
+.ctrl-btn.danger-btn{background:#FFF0F0;color:var(--red);}
+
+/* OVERLAYS */
+.overlay{display:none;position:fixed;inset:0;background:rgba(60,52,137,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:100;align-items:center;justify-content:center;}
+.overlay.show{display:flex;}
+.overlay-box{background:var(--white);border-radius:24px;padding:32px 28px;text-align:center;max-width:290px;width:92%;}
+.ov-eyebrow{font-size:9px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;margin-bottom:10px;}
+.ov-title{font-size:22px;font-weight:900;color:var(--pd);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;}
+.ov-sub{font-size:12px;font-weight:300;color:var(--pmut);margin-bottom:24px;}
+.ov-btn-p{background:var(--p);color:#fff;border:none;border-radius:12px;padding:14px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-bottom:8px;text-transform:uppercase;}
+.ov-btn-s{background:transparent;color:var(--pmut);border:.5px solid var(--pb);border-radius:12px;padding:12px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:600;cursor:pointer;width:100%;}
+
+#countdown-num{font-size:88px;font-weight:900;color:var(--pd);line-height:1;letter-spacing:-4px;margin-bottom:6px;animation:cntpop .3s ease;}
+#countdown-label{font-size:11px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;}
+@keyframes cntpop{0%{transform:scale(1.3);opacity:.5;}100%{transform:scale(1);opacity:1;}}
+
+/* RESULT */
+.res-eyebrow{font-size:10px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;}
+.res-title{font-size:30px;font-weight:900;color:var(--pd);letter-spacing:1px;margin-top:6px;text-transform:uppercase;}
+.res-sub{font-size:13px;font-weight:300;color:var(--pmut);margin-top:4px;}
+.res-char-big{background:var(--pm);border-radius:20px;padding:20px;text-align:center;margin-top:4px;}
+.res-char-label{font-size:9px;font-weight:600;letter-spacing:2px;color:var(--pmut);text-transform:uppercase;margin-bottom:6px;}
+.res-char-name{font-size:28px;font-weight:900;color:var(--pd);letter-spacing:.3px;text-transform:uppercase;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.stat-card{background:var(--pm);border-radius:14px;padding:16px;}
+.stat-num{font-size:32px;font-weight:800;color:var(--pd);letter-spacing:-1px;line-height:1;}
+.stat-label{font-size:10px;font-weight:600;color:var(--pmut);letter-spacing:.5px;margin-top:4px;text-transform:uppercase;}
+.restart-btn{background:var(--p);color:#fff;border:none;border-radius:14px;padding:16px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;cursor:pointer;width:100%;text-transform:uppercase;letter-spacing:.3px;transition:opacity .1s;}
+.restart-btn:active{opacity:.85;}
+
+.next-char-btn{background:var(--pm);color:var(--pd);border:.5px solid var(--pb);border-radius:14px;padding:14px 20px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;width:100%;letter-spacing:.3px;text-transform:uppercase;transition:all .15s;display:flex;align-items:center;justify-content:space-between;}
+.next-char-btn:active{background:var(--p);color:#fff;border-color:var(--p);}
+</style>
+</head>
+<body>
+
+<button class="sound-toggle" id="sound-toggle">🔊</button>
+
+<!-- HOME -->
+<div class="screen active" id="screen-home">
+  <div>
+    <div class="home-eyebrow">Упражнение</div>
+    <div class="home-title">Монологи</div>
+    <div class="home-sub">Войди в роль и говори от лица персонажа</div>
+  </div>
+  <div class="divider"></div>
+  <div class="how-list">
+    <div class="how-row"><span class="how-num">01</span><span class="how-text">ВИДИШЬ ПЕРСОНАЖА ИЛИ РОЛЬ — <b>ВХОДИШЬ В ОБРАЗ</b></span></div>
+    <div class="how-row"><span class="how-num">02</span><span class="how-text"><b>МОНОЛОГ</b> — ГОВОРИШЬ ОТ ПЕРВОГО ЛИЦА ПОКА ИДЁТ ТАЙМЕР</span></div>
+    <div class="how-row"><span class="how-num">03</span><span class="how-text"><b>ИНТЕРВЬЮ</b> — ОТВЕЧАЕШЬ НА ВОПРОСЫ ОТ ЛИЦА ПЕРСОНАЖА</span></div>
+    <div class="how-row"><span class="how-num">04</span><span class="how-text">ЦЕЛЬ — <b>НЕ ВЫХОДИТЬ ИЗ РОЛИ</b> ДО КОНЦА ТАЙМЕРА</span></div>
+  </div>
+  <div class="divider"></div>
+  <div class="home-btns">
+    <button class="btn-main" id="btn-quick-mono">
+      <div class="bleft"><span>Быстрый монолог</span><span class="bsub">Случайный персонаж · 2 мин</span></div>
+      <span class="barr">→</span>
+    </button>
+    <button class="btn-main" id="btn-quick-iv" style="background:var(--pd);">
+      <div class="bleft"><span>Быстрое интервью</span><span class="bsub">Случайный персонаж · 2 мин</span></div>
+      <span class="barr">→</span>
+    </button>
+    <button class="btn-ghost" id="btn-custom">
+      <div class="bleft"><span>Своя игра</span><span class="bsub">Категория, режим, время</span></div>
+      <span class="barr">→</span>
+    </button>
+    <button class="btn-ghost" id="btn-theory">
+      <div class="bleft"><span>Теория</span><span class="bsub">Зачем входить в роль</span></div>
+      <span class="barr">→</span>
+    </button>
+  </div>
+</div>
+
+<!-- CUSTOM -->
+<div class="screen" id="screen-custom">
+  <button class="back-btn" id="back-custom">← Назад</button>
+  <div>
+    <div class="section-eyebrow">Категория</div>
+    <div class="cat-grid" id="cat-grid">
+      <button class="cat-btn selected" data-cat="characters"><span class="ce">🎭</span>Персонажи</button>
+      <button class="cat-btn" data-cat="professions"><span class="ce">👔</span>Профессии</button>
+      <button class="cat-btn" data-cat="epochs"><span class="ce">⏳</span>Эпохи</button>
+      <button class="cat-btn" data-cat="animals"><span class="ce">🐾</span>Животные</button>
+      <button class="cat-btn" data-cat="archetypes"><span class="ce">🌀</span>Архетипы</button>
+      <button class="cat-btn" data-cat="objects"><span class="ce">🪑</span>Предметы</button>
+      <button class="cat-btn" data-cat="nature"><span class="ce">🌿</span>Природа</button>
+      <button class="cat-btn" data-cat="emotions"><span class="ce">❤️</span>Эмоции</button>
+      <button class="cat-btn" data-cat="clothes"><span class="ce">👗</span>Одежда</button>
+      <button class="cat-btn" data-cat="home"><span class="ce">🏠</span>Быт</button>
+      <button class="cat-btn" data-cat="sports"><span class="ce">⚽</span>Спорт</button>
+      <button class="cat-btn" data-cat="cities"><span class="ce">🏙️</span>Города</button>
+      <button class="cat-btn" data-cat="mix" style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;"><span style="font-size:18px;">🎲</span>ВСЕ ВМЕСТЕ</button>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div>
+    <div class="section-eyebrow">Режим</div>
+    <div class="mode-list" id="mode-list">
+      <button class="mode-btn selected" data-mode="monologue">
+        <span class="me">🎙️</span>
+        <div><div class="mtitle">Монолог</div><div class="mdesc">Говори от лица персонажа — свободно, без остановки</div></div>
+      </button>
+      <button class="mode-btn" data-mode="interview">
+        <span class="me">🎤</span>
+        <div><div class="mtitle">Интервью</div><div class="mdesc">Отвечай на вопросы от лица персонажа</div></div>
+      </button>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div>
+    <div class="section-eyebrow">Время монолога</div>
+    <div class="setting-row">
+      <div><div class="sname">Длительность</div><div class="sdesc">Минут на одного персонажа</div></div>
+      <div class="stepper">
+        <button class="step-btn" id="dur-minus">−</button>
+        <span class="step-val" id="dur-val">2 мин</span>
+        <button class="step-btn" id="dur-plus">+</button>
+      </div>
+    </div>
+  </div>
+  <button class="btn-main" id="custom-start-btn">
+    <div class="bleft"><span>Начать игру</span></div><span class="barr">→</span>
+  </button>
+</div>
+
+<!-- THEORY -->
+<div class="screen" id="screen-theory">
+  <button class="back-btn" id="back-theory">← Назад</button>
+  <div>
+    <div class="home-eyebrow">Теория</div>
+    <div class="theory-title">Сила роли</div>
+    <div class="theory-sub">Зачем говорить от лица другого</div>
+  </div>
+  <div class="divider"></div>
+  <div>
+    <div class="tsec">
+      <div class="tsec-label">Что развивает?</div>
+      <div class="tsec-body">Монолог от лица персонажа тренирует <b>эмпатию, импровизацию и связную речь.</b> Когда ты «становишься» кем-то другим — мозг выходит за пределы привычных паттернов мышления.</div>
+    </div>
+    <div class="tsec">
+      <div class="tsec-label">Почему это сложно?</div>
+      <div class="tsec-body">Мозг привык говорить «от себя». Вход в роль — это <b>намеренное переключение перспективы.</b> Это прямой тренажёр для актёрского мышления, переговоров и публичных выступлений.
+      <div class="theory-tip">📌 Попробуй: представь, что ты — старый маяк. Что ты видел? Что чувствуешь ночью? Что ты думаешь о кораблях?</div></div>
+    </div>
+    <div class="tsec">
+      <div class="tsec-label">Режим Интервью</div>
+      <div class="tsec-body">Вопросы создают <b>структуру для импровизации.</b> Проще войти в роль, когда есть якорь — конкретный вопрос. Это также тренирует <b>быстрые ответы без подготовки.</b></div>
+    </div>
+    <div class="tsec">
+      <div class="tsec-label">Как использовать?</div>
+      <div class="tsec-body">Начни с <b>Профессий</b> — их проще всего представить. Затем переходи к <b>Архетипам и Эпохам</b> — они требуют воображения. Не бойся быть смешным — это часть упражнения.
+      <div class="theory-tip">🎯 Цель: 2 минуты не выходить из роли и не говорить «я не знаю».</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- GAME -->
+<div class="screen" id="screen-game">
+  <div class="game-topbar">
+    <span class="game-eyebrow" id="g-cat-label">Персонажи</span>
+    <span class="game-sess" id="g-sess-wrap">Осталось <b id="g-sess-time">2:00</b></span>
+  </div>
+  <div class="mode-tag" id="g-mode-tag">Монолог</div>
+
+  <!-- MONOLOGUE view -->
+  <div id="view-monologue">
+    <div class="character-card">
+      <div class="char-eyebrow">Ты — это</div>
+      <div class="char-name" id="g-char-name">—</div>
+      <div class="char-prompt" id="g-char-prompt">Говори от первого лица. Не выходи из роли.</div>
+    </div>
+  <button class="next-char-btn" id="next-char-btn"><span>Следующий персонаж</span><span>→</span></button>
+
+  <!-- INTERVIEW view -->
+  <div id="view-interview" style="display:none;flex-direction:column;gap:12px;">
+    <div class="interview-card">
+      <div class="iv-char-row">
+        <div class="iv-avatar" id="iv-avatar">🎭</div>
+        <div class="iv-char-info">
+          <div class="iv-char-eyebrow">Ты — это</div>
+          <div class="iv-char-name" id="iv-char-name">—</div>
+        </div>
+      </div>
+      <div class="iv-question-label">Вопрос интервьюера</div>
+      <div class="iv-question" id="iv-question">—</div>
+      <div class="iv-question-num" id="iv-q-num">Вопрос 1</div>
+    </div>
+    <button class="next-q-btn" id="next-q-btn">Следующий вопрос →</button>
+  </div>
+
+  <div class="timer-section">
+    <div class="timer-big-row">
+      <span class="timer-big" id="g-timer">2:00</span>
+    </div>
+    <div class="timer-bar-bg"><div class="timer-bar-fill" id="g-timer-bar" style="width:100%"></div></div>
+  </div>
+
+  <div class="ctrl-row">
+    <button class="ctrl-btn" id="g-pause"><span id="g-pause-icon">⏸</span> <span id="g-pause-lbl">Пауза</span></button>
+    <button class="ctrl-btn danger-btn" id="g-stop">⏹ Стоп</button>
+    <button class="ctrl-btn" id="g-menu">🏠 Меню</button>
+  </div>
+</div>
+
+<!-- RESULT -->
+<div class="screen" id="screen-result">
+  <div>
+    <div class="res-eyebrow">Раунд завершён</div>
+    <div class="res-title" id="r-title">Браво!</div>
+    <div class="res-sub" id="r-sub">Роль сыграна</div>
+  </div>
+  <div class="res-char-big">
+    <div class="res-char-label">Персонаж</div>
+    <div class="res-char-name" id="r-char">—</div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-num" id="r-time">2</div><div class="stat-label">Минут в роли</div></div>
+    <div class="stat-card"><div class="stat-num" id="r-questions">—</div><div class="stat-label" id="r-q-label">Режим</div></div>
+  </div>
+  <button class="restart-btn" id="r-restart">Играть ещё раз →</button>
+</div>
+
+<!-- PAUSE -->
+<div class="overlay" id="pause-overlay">
+  <div class="overlay-box">
+    <div class="ov-eyebrow">Игра</div>
+    <div class="ov-title">Пауза</div>
+    <div class="ov-sub">Таймер остановлен</div>
+    <button class="ov-btn-p" id="pause-resume">Продолжить →</button>
+    <button class="ov-btn-s" id="pause-menu-btn">← Выйти в меню</button>
+  </div>
+</div>
+
+<!-- COUNTDOWN -->
+<div class="overlay" id="countdown-overlay">
+  <div class="overlay-box" style="padding:44px 28px;">
+    <div id="countdown-num">3</div>
+    <div id="countdown-label">Приготовься</div>
+  </div>
+</div>
+
+<script>
+// ══ WORDS ══
+const WORDS = {
+  characters: ['Пират','Ведьма','Рыцарь','Шут','Король','Нищий','Пророк','Шпион','Странник','Вампир','Детектив','Монах','Самурай','Бард','Алхимик','Дракон','Призрак','Оборотень','Маг','Принцесса','Робот','Пришелец','Мумия','Зомби','Гладиатор'],
+  professions: ['Хирург','Пожарный','Дипломат','Шахтёр','Маяковщик','Водолаз','Лётчик','Повар','Психолог','Архитектор','Разведчик','Священник','Палач','Сапёр','Реставратор','Астролог','Переводчик','Режиссёр','Скульптор','Виноградарь','Картограф','Таксидермист','Звонарь','Трубочист','Стеклодув'],
+  epochs: ['Викинг','Фараон','Рыцарь Крестовых походов','Человек эпохи Возрождения','Пират XVII века','Солдат Первой мировой','Житель Древнего Рима','Самурай феодальной Японии','Купец Шёлкового пути','Монах Средневековья','Индейский вождь','Греческий философ','Конкистадор','Казак','Кочевник степей'],
+  animals: ['Старый волк','Мудрая сова','Хитрая лиса','Ленивый кот','Гордый орёл','Одинокий кит','Трудолюбивый бобёр','Нервный заяц','Медведь-отшельник','Дельфин-путешественник','Слон с памятью','Ворона-философ','Змея без прошлого','Тигр на пенсии','Антарктический пингвин'],
+  archetypes: ['Мудрец','Герой','Трикстер','Тень','Анима','Персона','Ребёнок','Воин','Любовник','Правитель','Маг','Изгой','Хранитель','Разрушитель','Невинный'],
+  objects: ['Старое зеркало','Заброшенный маяк','Последняя монета','Сломанные часы','Пустой трон','Ржавый меч','Древняя карта','Забытый чемодан','Старый граммофон','Потухший фонарь','Разбитый компас','Первая книга','Последнее письмо','Потерянный ключ','Старый мост'],
+  nature: ['Старый дуб','Горная река','Вулкан перед извержением','Одинокая скала','Последний айсберг','Осенний лес','Пустыня в полдень','Туман над болотом','Первый снег','Грозовое облако','Морская волна','Заброшенный сад','Древняя пещера','Степной ветер','Одинокая звезда'],
+  emotions: ['Ностальгия','Ревность','Эйфория','Тоска','Злость','Нежность','Страх темноты','Предвкушение','Разочарование','Вина','Восторг','Апатия','Влюблённость','Смущение','Одиночество'],
+  clothes: ['Старое пальто','Свадебное платье','Рабочая каска','Солдатский сапог','Корона','Маскарадная маска','Спортивная форма','Ватник','Балетная пачка','Смокинг','Детский комбинезон','Монашеская ряса','Скафандр','Джинсы 90-х','Боксёрские перчатки'],
+  home: ['Старый холодильник','Кухонный нож','Стиральная машина','Диван у телевизора','Будильник','Швейная машинка','Семейный альбом','Настольная лампа','Мусорное ведро','Кофемолка','Детская коляска','Кресло-качалка','Газовая плита','Дверной звонок','Половая тряпка'],
+  sports: ['Старый мяч','Олимпийская медаль','Сломанная ракетка','Беговая дорожка','Штанга','Ворота после матча','Шахматная доска','Скейтборд','Боксёрский мешок','Плавательные очки','Велосипед на пенсии','Судейский свисток','Тренерская скамья','Финишная лента','Кубок победителя'],
+  cities: ['Рим','Токио','Нью-Йорк','Москва','Париж','Стамбул','Каир','Лондон','Пекин','Рио-де-Жанейро','Венеция','Амстердам','Дубай','Бангкок','Барселона','Берлин','Буэнос-Айрес','Мехико','Сингапур','Мумбаи','Афины','Прага','Сидней','Лос-Анджелес','Санкт-Петербург'],
+  mix: []
+};
+WORDS.mix = Object.keys(WORDS).filter(k=>k!=='mix').flatMap(k=>WORDS[k]);
+
+const CAT_NAMES = {characters:'Персонажи',professions:'Профессии',epochs:'Эпохи',animals:'Животные',archetypes:'Архетипы',objects:'Предметы',nature:'Природа',emotions:'Эмоции',clothes:'Одежда',home:'Быт',sports:'Спорт',cities:'Города',mix:'Все вместе'};
+const CAT_EMOJI = {characters:'🎭',professions:'👔',epochs:'⏳',animals:'🐾',archetypes:'🌀',objects:'🪑',nature:'🌿',emotions:'❤️',clothes:'👗',home:'🏠',sports:'⚽',cities:'🏙️',mix:'🎲'};
+
+const MONOLOGUE_PROMPTS = {
+  characters: 'Расскажи о своей жизни, целях, страхах. Говори от первого лица.',
+  professions: 'Опиши свой рабочий день, что ты любишь и ненавидишь в своей работе.',
+  epochs: 'Расскажи о своём времени — что происходит вокруг, как ты живёшь.',
+  animals: 'Расскажи о своей жизни, привычках, о том что ты думаешь о людях.',
+  archetypes: 'Расскажи о своей природе — кто ты, что движет тобой, что ты несёшь миру.',
+  objects: 'Расскажи о своей истории — что ты видел, кому принадлежал, что чувствуешь.',
+  mix: 'Войди в образ. Говори от первого лица не выходя из роли.',
+  nature: 'Расскажи о своей природе, истории, о людях которых ты видел, о времени.',
+  emotions: 'Ты — это чувство. Расскажи когда ты возникаешь, что ты делаешь с людьми, чего ты хочешь.',
+  clothes: 'Расскажи свою историю — кто тебя носил, где ты побывал, что ты видел и чувствовал.',
+  home: 'Расскажи о своей жизни в доме — что ты видишь каждый день, кто тебя использует, что ты думаешь.',
+  sports: 'Расскажи свою историю — победы, поражения, кто держал тебя в руках, о чём ты мечтаешь.',
+  cities: 'Ты — великий город. Расскажи о своей истории, характере, жителях, тайнах и мечтах.'
+};
+
+// ══ INTERVIEW QUESTIONS ══
+const QUESTIONS_UNIVERSAL = [
+  'Расскажи — кто ты и откуда?',
+  'Что ты любишь больше всего в своей жизни?',
+  'Чего ты боишься?',
+  'Что тебя раздражает в других?',
+  'Какой был самый важный момент в твоей жизни?',
+  'Что ты думаешь о современном мире?',
+  'Есть ли у тебя мечта?',
+  'Что бы ты изменил в своей жизни?',
+  'Как ты проводишь вечера?',
+  'Что для тебя значит счастье?',
+  'Есть ли у тебя враги?',
+  'Что ты думаешь о смерти?',
+  'Что бы ты сказал своему молодому «я»?',
+  'Какой твой главный секрет?',
+  'Что ты хочешь, чтобы о тебе помнили?'
+];
+const QUESTIONS_BY_CAT = {
+  professions: [
+    'Почему ты выбрал эту профессию?',
+    'Что самое сложное в твоей работе?',
+    'Был ли случай, который изменил тебя?',
+    'Чему тебя научила работа?',
+    'Что ты чувствуешь, когда заканчивается рабочий день?',
+    'Есть ли профессиональный секрет, который ты хранишь?',
+    'Если бы не эта работа — кем бы ты стал?'
+  ],
+  objects: [
+    'Сколько тебе лет и где ты был всё это время?',
+    'Кто был твоим первым владельцем?',
+    'Что самое странное, что ты видел?',
+    'Есть ли у тебя душа?',
+    'Что ты чувствуешь, когда тебя берут в руки?',
+    'Чего ты больше всего боишься?',
+    'Что произойдёт, когда тебя не станет?'
+  ],
+  animals: [
+    'Как ты относишься к людям?',
+    'Что ты думаешь, когда на тебя смотрят в зоопарке?',
+    'Есть ли у животных мудрость, которой нет у людей?',
+    'Что для тебя самое важное в жизни?',
+    'Чего ты не понимаешь в людях?',
+    'Как ты выбираешь, кому доверять?'
+  ]
+};
+
+function getQuestions(cat) {
+  const specific = QUESTIONS_BY_CAT[cat] || [];
+  const universal = [...QUESTIONS_UNIVERSAL];
+  // shuffle and interleave
+  const shuffled = [...specific, ...universal].sort(() => Math.random() - .5);
+  return shuffled;
+}
+
+// ══ AUDIO ══
+let actx, soundOn = true;
+function ac(){if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();return actx;}
+function beep(f,d,v=.3){if(!soundOn)return;try{const c=ac(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+d);o.start();o.stop(c.currentTime+d);}catch(e){}}
+const sndEnd=()=>{beep(660,.18,.35);setTimeout(()=>beep(528,.18,.3),220);setTimeout(()=>beep(396,.4,.25),440);};
+document.addEventListener('click',()=>{try{ac();}catch(e){}},{once:true});
+
+document.getElementById('sound-toggle').addEventListener('click',()=>{
+  soundOn=!soundOn;
+  document.getElementById('sound-toggle').textContent=soundOn?'🔊':'🔇';
+});
+
+// ══ STATE ══
+let cfg = {cat:'characters', mode:'monologue', durMin:2};
+let gs = {};
+let sT;
+
+// ══ NAV ══
+document.getElementById('btn-quick-mono').addEventListener('click',()=>{cfg={cat:'mix',mode:'monologue',durMin:2};startGame();});
+document.getElementById('btn-quick-iv').addEventListener('click',()=>{cfg={cat:'mix',mode:'interview',durMin:2};startGame();});
+document.getElementById('btn-custom').addEventListener('click',()=>showScreen('custom'));
+document.getElementById('btn-theory').addEventListener('click',()=>showScreen('theory'));
+document.getElementById('back-custom').addEventListener('click',()=>showScreen('home'));
+document.getElementById('back-theory').addEventListener('click',()=>showScreen('home'));
+document.getElementById('r-restart').addEventListener('click',()=>showScreen('home'));
+
+// ══ CUSTOM ══
+document.querySelectorAll('.cat-btn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.cat-btn').forEach(x=>x.classList.remove('selected'));
+  b.classList.add('selected');cfg.cat=b.dataset.cat;
+}));
+document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('selected'));
+  b.classList.add('selected');cfg.mode=b.dataset.mode;
+}));
+
+function stepper(mi,pi,vi,key,min,max,unit){
+  const u=()=>document.getElementById(vi).textContent=cfg[key]+unit;
+  document.getElementById(mi).addEventListener('click',()=>{if(cfg[key]>min){cfg[key]--;u();}});
+  document.getElementById(pi).addEventListener('click',()=>{if(cfg[key]<max){cfg[key]++;u();}});
+}
+stepper('dur-minus','dur-plus','dur-val','durMin',1,5,' мин');
+document.getElementById('custom-start-btn').addEventListener('click',startGame);
+
+// ══ GAME ══
+
+function autoSizeCharName(el) {
+  const text = el.textContent;
+  const len = text.length;
+  let size;
+  if (len <= 8)        size = 52;
+  else if (len <= 12)  size = 44;
+  else if (len <= 16)  size = 36;
+  else if (len <= 20)  size = 30;
+  else if (len <= 25)  size = 26;
+  else                 size = 22;
+  el.style.fontSize = size + 'px';
+}
+
+
+function autoSizeIvName(el) {
+  const len = el.textContent.length;
+  let size;
+  if (len <= 10)       size = 20;
+  else if (len <= 16)  size = 16;
+  else if (len <= 22)  size = 13;
+  else                 size = 11;
+  el.style.fontSize = size + 'px';
+}
+
+function shuffle(a){return [...a].sort(()=>Math.random()-.5);}
+
+function startGame(){
+  clearInterval(sT);
+  const words = shuffle(WORDS[cfg.cat]);
+  const char = words[0];
+  const questions = getQuestions(cfg.cat);
+  gs = {
+    char, questions, qIdx:0,
+    totalSec: cfg.durMin*60, sessLeft: cfg.durMin*60,
+    paused:false, pauseLeft:0
+  };
+
+  // Setup UI
+  document.getElementById('g-cat-label').textContent = CAT_EMOJI[cfg.cat]+' '+CAT_NAMES[cfg.cat].toUpperCase();
+  document.getElementById('g-mode-tag').textContent = cfg.mode==='monologue' ? 'МОНОЛОГ' : 'ИНТЕРВЬЮ';
+
+  if(cfg.mode==='monologue'){
+    document.getElementById('view-monologue').style.display='block';
+    document.getElementById('view-interview').style.display='none';
+    document.getElementById('g-char-name').textContent=char.toUpperCase();
+  autoSizeCharName(document.getElementById('g-char-name'));
+    document.getElementById('g-char-prompt').textContent=MONOLOGUE_PROMPTS[cfg.cat]||MONOLOGUE_PROMPTS.mix;
+  } else {
+    document.getElementById('view-monologue').style.display='none';
+    document.getElementById('view-interview').style.display='flex';
+    const ivNameEl=document.getElementById('iv-char-name');
+    ivNameEl.textContent=char.toUpperCase();
+    autoSizeIvName(ivNameEl);
+    document.getElementById('iv-avatar').textContent=CAT_EMOJI[cfg.cat];
+    showQuestion();
+  }
+
+  document.getElementById('g-sess-wrap').classList.remove('urgent');
+  showScreen('game');
+  startCountdown();
+}
+
+function showQuestion(){
+  const q = gs.questions[gs.qIdx] || 'Расскажи что-нибудь ещё о себе...';
+  document.getElementById('iv-question').textContent=q;
+  document.getElementById('iv-q-num').textContent='Вопрос '+(gs.qIdx+1)+' из '+gs.questions.length;
+}
+
+
+// Next character in monologue
+document.getElementById('next-char-btn').addEventListener('click', () => {
+  if(gs.paused) return;
+  // pick new character
+  const words = shuffle(WORDS[cfg.cat]);
+  gs.char = words[0];
+  document.getElementById('g-char-name').textContent = gs.char.toUpperCase();
+  autoSizeCharName(document.getElementById('g-char-name'));
+  document.getElementById('g-char-prompt').textContent = MONOLOGUE_PROMPTS[cfg.cat] || MONOLOGUE_PROMPTS.mix;
+  // reset timer
+  clearInterval(sT);
+  gs.sessLeft = cfg.durMin * 60;
+  gs.totalSec = cfg.durMin * 60;
+  document.getElementById('g-sess-wrap').classList.remove('urgent');
+  const bar = document.getElementById('g-timer-bar');
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  bar.offsetHeight;
+  bar.style.transition = 'width 1s linear';
+  bar.style.background = 'var(--p)';
+  updTimerUI();
+  sT = setInterval(() => {
+    gs.sessLeft--;
+    updTimerUI();
+    if(gs.sessLeft <= 30) document.getElementById('g-sess-wrap').classList.add('urgent');
+    if(gs.sessLeft <= 0) { sndEnd(); endGame(); }
+  }, 1000);
+  beep(528, .12, .25);
+});
+
+document.getElementById('next-q-btn').addEventListener('click',()=>{
+  if(gs.qIdx < gs.questions.length-1){
+    gs.qIdx++;
+    showQuestion();
+    beep(528,.1,.2);
+  }
+});
+
+function startCountdown(){
+  const ov=document.getElementById('countdown-overlay');
+  const nEl=document.getElementById('countdown-num');
+  const lEl=document.getElementById('countdown-label');
+  ov.classList.add('show');
+  let n=3;nEl.textContent=n;lEl.textContent='ПРИГОТОВЬСЯ';beep(440,.08,.22);
+  const tick=setInterval(()=>{
+    n--;
+    if(n>0){nEl.textContent=n;nEl.style.animation='none';nEl.offsetHeight;nEl.style.animation='';beep(440,.08,.22);}
+    else{clearInterval(tick);nEl.textContent='→';nEl.style.animation='none';nEl.offsetHeight;nEl.style.animation='';lEl.textContent='ПОЕХАЛИ';beep(660,.25,.38);
+      setTimeout(()=>{ov.classList.remove('show');startTimer();},700);}
+  },1000);
+}
+
+function startTimer(){
+  // snap bar
+  const bar=document.getElementById('g-timer-bar');
+  bar.style.transition='none';bar.style.width='100%';bar.offsetHeight;
+  bar.style.transition='width 1s linear';
+  updTimerUI();
+  sT=setInterval(()=>{
+    gs.sessLeft--;
+    updTimerUI();
+    if(gs.sessLeft<=30)document.getElementById('g-sess-wrap').classList.add('urgent');
+    if(gs.sessLeft<=0){sndEnd();endGame();}
+  },1000);
+}
+
+function updTimerUI(){
+  const t=gs.sessLeft;
+  const m=Math.floor(t/60),s=t%60;
+  document.getElementById('g-timer').textContent=m+':'+(s<10?'0':'')+s;
+  document.getElementById('g-sess-time').textContent=m+':'+(s<10?'0':'')+s;
+  document.getElementById('g-timer-bar').style.width=(t/gs.totalSec*100)+'%';
+  document.getElementById('g-timer-bar').style.background=t<=30?'var(--red)':'var(--p)';
+}
+
+// ── PAUSE / STOP / MENU ──
+let pauseLeft=0;
+function setPaused(v){
+  gs.paused=v;
+  const btn=document.getElementById('g-pause');
+  const icon=document.getElementById('g-pause-icon');
+  const lbl=document.getElementById('g-pause-lbl');
+  if(v){
+    clearInterval(sT);pauseLeft=gs.sessLeft;
+    btn.classList.add('pause-active');icon.textContent='▶';lbl.textContent='Играть';
+    document.getElementById('pause-overlay').classList.add('show');
+  } else {
+    document.getElementById('pause-overlay').classList.remove('show');
+    btn.classList.remove('pause-active');icon.textContent='⏸';lbl.textContent='Пауза';
+    gs.sessLeft=pauseLeft;
+    startTimer();
+  }
+}
+document.getElementById('g-pause').addEventListener('click',()=>setPaused(!gs.paused));
+document.getElementById('pause-resume').addEventListener('click',()=>setPaused(false));
+document.getElementById('pause-menu-btn').addEventListener('click',()=>{clearInterval(sT);document.getElementById('pause-overlay').classList.remove('show');showScreen('home');});
+document.getElementById('g-stop').addEventListener('click',()=>{clearInterval(sT);endGame();});
+document.getElementById('g-menu').addEventListener('click',()=>{clearInterval(sT);showScreen('home');});
+
+function endGame(){clearInterval(sT);showResult();}
+
+// ══ RESULT ══
+function showResult(){
+  const titles=['Браво!','Отлично!','В роли!','Мастер!'];
+  const subs=['Роль сыграна до конца','Не вышел из образа','Характер раскрыт','Персонаж ожил'];
+  document.getElementById('r-title').textContent=titles[Math.floor(Math.random()*titles.length)];
+  document.getElementById('r-sub').textContent=subs[Math.floor(Math.random()*subs.length)];
+  const rCharEl=document.getElementById('r-char');
+  rCharEl.textContent=gs.char.toUpperCase();
+  const rLen=gs.char.length;
+  rCharEl.style.fontSize=rLen<=12?'28px':rLen<=20?'22px':rLen<=26?'17px':'14px';
+  document.getElementById('r-time').textContent=cfg.durMin;
+  if(cfg.mode==='interview'){
+    document.getElementById('r-questions').textContent=gs.qIdx+1;
+    document.getElementById('r-q-label').textContent='Вопросов';
+  } else {
+    document.getElementById('r-questions').textContent='🎙️';
+    document.getElementById('r-q-label').textContent='Монолог';
+  }
+  showScreen('result');
+}
+
+function showScreen(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+n).classList.add('active');
+  window.scrollTo(0,0);
+}
+if(window.Telegram&&Telegram.WebApp){Telegram.WebApp.ready();Telegram.WebApp.expand();}
+</script>
+</body>
+</html>
