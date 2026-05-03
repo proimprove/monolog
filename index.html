@@ -289,8 +289,9 @@ body{font-family:'Montserrat',sans-serif;background:var(--bg);min-height:100vh;d
       <div class="char-eyebrow">Ты — это</div>
       <div class="char-name" id="g-char-name">—</div>
       <div class="char-prompt" id="g-char-prompt">Говори от первого лица. Не выходи из роли.</div>
+    <button class="next-char-btn" id="next-char-btn"><span>Следующий персонаж</span><span>→</span></button>
     </div>
-  <button class="next-char-btn" id="next-char-btn"><span>Следующий персонаж</span><span>→</span></button>
+  </div>
 
   <!-- INTERVIEW view -->
   <div id="view-interview" style="display:none;flex-direction:column;gap:12px;">
@@ -543,12 +544,14 @@ function startGame(){
   if(cfg.mode==='monologue'){
     document.getElementById('view-monologue').style.display='block';
     document.getElementById('view-interview').style.display='none';
+    document.getElementById('next-char-btn').style.display='flex';
     document.getElementById('g-char-name').textContent=char.toUpperCase();
   autoSizeCharName(document.getElementById('g-char-name'));
     document.getElementById('g-char-prompt').textContent=MONOLOGUE_PROMPTS[cfg.cat]||MONOLOGUE_PROMPTS.mix;
   } else {
     document.getElementById('view-monologue').style.display='none';
     document.getElementById('view-interview').style.display='flex';
+    document.getElementById('next-char-btn').style.display='none';
     const ivNameEl=document.getElementById('iv-char-name');
     ivNameEl.textContent=char.toUpperCase();
     autoSizeIvName(ivNameEl);
